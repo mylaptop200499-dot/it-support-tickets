@@ -1,0 +1,58 @@
+
+name: Test Repository Sync
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-repo-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout Alo DevOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.ALO_GITHUB_USERNAME }}/sync-test-destination
+          token: ${{ secrets.ALO_GITHUB_TOKEN }}
+          ref: main
+          path: destination
+
+      - name: Copy files
+        run: |
+          rsync -av --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='destination/' \
+            ./ destination/
+
+      - name: Commit and push changes
+        working-directory: destination
+        run: |
+          git config user.name "alo-sync-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to sync"
+            exit 0
+          fi
+
+          git commit -m "Automatic sync from Own Product"
+          git push origin HEAD:main
