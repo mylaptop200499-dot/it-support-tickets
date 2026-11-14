@@ -45,7 +45,7 @@ const seeds = {
  tickets:[
   {id:"c1",name:"Laptop won't connect to Wi-Fi",requester:"Jordan Lee",category:"Network",priority:"High",status:"Open",date:"2026-10-28"},
   {id:"c2",name:"Need access to design folder",requester:"Taylor Kim",category:"Access",priority:"Medium",status:"In progress",date:"2026-10-27"},
-  {id:"c3",name:"Monitor flickering",requester:"Morgan Ray",category:"Hardware",priority:"Low",status:"Resolved",date:"2026-10-24"}]
+  {id:"c3",name:"Monitor fucking",requester:"Morgan Ray",category:"Hardware",priority:"Low",status:"Resolved",date:"2026-10-24"}]
 };
 const config = {
  employees:{title:"Employee Management",desc:"Organize people, roles, and teams.",singular:"employee",section:"Team directory",add:"Add employee",fields:[["name","Full name","text"],["email","Email address","email"],["department","Department","select","Design|Engineering|Marketing|Finance|HR|Operations"],["role","Job title","text"],["status","Status","select","Active|On leave|Inactive"],["salary","Annual salary (USD)","number"]]},
