@@ -1,5 +1,5 @@
 
-name: Test Repository Sync
+name: Sync Code to Vercel Repository
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: test-repo-sync
+  group: sync-to-vercel
   cancel-in-progress: false
 
 jobs:
@@ -19,29 +19,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source repository
+      - name: Checkout Source Repository
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: false
 
-      - name: Checkout Alo DevOps repository
+      - name: Checkout Destination Repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ secrets.ALO_GITHUB_USERNAME }}/sync-test-destination
+          repository: Sardin-learning/it-support-tickets-vercel
           token: ${{ secrets.ALO_GITHUB_TOKEN }}
           ref: main
           path: destination
+          persist-credentials: true
 
-      - name: Copy files
+      - name: Sync Files
         run: |
           rsync -av --delete \
             --exclude='.git/' \
             --exclude='.github/' \
             --exclude='destination/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.vercel/' \
             ./ destination/
 
-      - name: Commit and push changes
+      - name: Commit and Push Changes
         working-directory: destination
         run: |
           git config user.name "alo-sync-bot"
@@ -54,5 +58,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Automatic sync from Own Product"
+          git commit -m "Auto sync from it-support-tickets"
           git push origin HEAD:main
