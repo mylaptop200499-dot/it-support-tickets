@@ -87,7 +87,7 @@ function App(){
   if(KIND==="expenses")return [["Total spent",cash(items.reduce((s,x)=>s+Number(x.amount||0),0))],["Transactions",items.length],["Categories",new Set(items.map(x=>x.category)).size],["Budget left",cash(Math.max(0,1500-items.reduce((s,x)=>s+Number(x.amount||0),0)))]];
   if(KIND==="shop"||KIND==="food")return [[KIND==="food"?"Menu items":"Products",items.length],["Categories",new Set(items.map(x=>x.category)).size],["Cart items",cartCount],["Cart total",cash(totalCart)]];
   if(KIND==="hospital")return [["Doctors",items.length],["Specialties",new Set(items.map(x=>x.specialty)).size],["Requests",appointments.length],["Next step","Book a visit"]];
-  if(KIND==="tickets")return [["All tickets",items.length],["Open",items.filter(x=>x.status==="Open").length],["In progress",items.filter(x=>x.status==="In progress").length],["Resolved",items.filter(x=>x.status==="Resolved").length]];
+  if(KIND==="tickets")return [["All tickets",items.length],["Open",items.filter(x=>x.status==="Open").length],["In progress",items.filter(x=>x.status==="In progress").length],["Resolved",items.filter(x=>x.status==="Resolved").length],["Mudinchi",items.filter(x=>x.status==="Mudinchi").length]];
   return [["Location","San Francisco"],["Temperature","22°"],["Humidity","64%"],["Wind","12 km/h"]];
  };
  const table=(headers,rows)=><div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows}</tbody></table></div>;
