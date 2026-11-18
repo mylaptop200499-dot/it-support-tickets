@@ -14,6 +14,10 @@ concurrency:
   group: sync-to-vercel
   cancel-in-progress: false
 
+env:
+  SOURCE_REPO: ${{ vars.SOURCE_REPO }}
+  DESTINATION_REPO: ${{ vars.DESTINATION_REPO }}
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -22,13 +26,14 @@ jobs:
       - name: Checkout Source Repository
         uses: actions/checkout@v4
         with:
+          repository: ${{ env.SOURCE_REPO }}
           ref: main
           persist-credentials: false
 
       - name: Checkout Destination Repository
         uses: actions/checkout@v4
         with:
-          repository: Sardin-learning/it-support-tickets-vercel
+          repository: ${{ env.DESTINATION_REPO }}
           token: ${{ secrets.ALO_GITHUB_TOKEN }}
           ref: main
           path: destination
@@ -60,5 +65,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Auto sync from it-support-tickets"
+          git commit -m "Auto sync from ${SOURCE_REPO}"
           git push origin HEAD:main
