@@ -23,6 +23,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate Configuration
+        run: |
+          if [[ -z "$DESTINATION_REPO" ]]; then
+            echo "::error::DESTINATION_REPO variable is missing"
+            exit 1
+          fi
+
       - name: Checkout Source Repository
         uses: actions/checkout@v4
         with:
@@ -61,6 +68,9 @@ jobs:
           git config user.email \
             "${GIT_ACTOR_ID}+${GIT_ACTOR}@users.noreply.github.com"
 
+          echo "Git User: $(git config user.name)"
+          echo "Git Email: $(git config user.email)"
+
           git add -A
 
           if git diff --cached --quiet; then
@@ -70,3 +80,5 @@ jobs:
 
           git commit -m "Auto sync from ${SOURCE_REPO}"
           git push origin HEAD:main
+
+          echo "Sync completed successfully"
