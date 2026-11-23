@@ -1,84 +1,121 @@
 
-name: Sync Code to Vercel Repository
+name: EC2 Auto Deployment
 
 on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sync-to-vercel
+  group: ec2-main-deployment
   cancel-in-progress: false
 
-env:
-  SOURCE_REPO: ${{ vars.SOURCE_REPO }}
-  DESTINATION_REPO: ${{ vars.DESTINATION_REPO }}
-
 jobs:
-  sync:
+  deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-      - name: Validate Configuration
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Execute EC2 Deployment Script
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          DEPLOY_SCRIPT_PATH: ${{ vars.DEPLOY_SCRIPT_PATH }}
         run: |
-          if [[ -z "$DESTINATION_REPO" ]]; then
-            echo "::error::DESTINATION_REPO variable is missing"
+          set -euo pipefail
+
+          echo "Starting deployment on EC2..."
+
+          # Prepare SSM command parameters safely
+          PARAMS=$(jq -n \
+            --arg cmd "sudo bash $DEPLOY_SCRIPT_PATH" \
+            '{commands: [$cmd]}')
+
+          # Send deployment command to EC2
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "$PARAMS" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+
+          STATUS="Pending"
+
+          # Wait for deployment completion
+          for attempt in {1..300}; do
+            if ! RESULT=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --output json 2>/dev/null); then
+              echo "Waiting for SSM invocation..."
+              sleep 10
+              continue
+            fi
+
+            STATUS=$(jq -r '.Status' <<< "$RESULT")
+            echo "Deployment status: $STATUS"
+
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut)
+                break
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          # Retrieve final deployment result
+          RESULT=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --output json)
+
+          STATUS=$(jq -r '.Status' <<< "$RESULT")
+          EXIT_CODE=$(jq -r '.ResponseCode' <<< "$RESULT")
+
+          echo "========== DEPLOYMENT LOGS =========="
+          jq -r '.StandardOutputContent' <<< "$RESULT"
+
+          echo "========== ERROR LOGS =========="
+          jq -r '.StandardErrorContent' <<< "$RESULT"
+
+          echo "========== FINAL RESULT =========="
+          echo "Status: $STATUS"
+          echo "Exit Code: $EXIT_CODE"
+
+          if [[ "$STATUS" == "Success" && "$EXIT_CODE" == "0" ]]; then
+            echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
+
+            {
+              echo "## Deployment Successful"
+              echo "Branch: main"
+              echo "Instance: $INSTANCE_ID"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+          else
+            echo "DEPLOYMENT FAILED"
+
+            {
+              echo "## Deployment Failed"
+              echo "Branch: main"
+              echo "Instance: $INSTANCE_ID"
+              echo "Status: $STATUS"
+              echo "Exit Code: $EXIT_CODE"
+            } >> "$GITHUB_STEP_SUMMARY"
+
             exit 1
           fi
-
-      - name: Checkout Source Repository
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          persist-credentials: false
-
-      - name: Checkout Destination Repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.DESTINATION_REPO }}
-          token: ${{ secrets.ALO_GITHUB_TOKEN }}
-          ref: main
-          path: destination
-          persist-credentials: true
-
-      - name: Sync Files
-        run: |
-          rsync -av --delete \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='destination/' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            --exclude='vercel.json' \
-            --exclude='.npmrc' \
-            --exclude='.vercel/' \
-            ./ destination/
-
-      - name: Commit and Push Changes
-        working-directory: destination
-        env:
-          GIT_ACTOR: ${{ github.actor }}
-          GIT_ACTOR_ID: ${{ github.actor_id }}
-        run: |
-          git config user.name "$GIT_ACTOR"
-          git config user.email \
-            "${GIT_ACTOR_ID}+${GIT_ACTOR}@users.noreply.github.com"
-
-          echo "Git User: $(git config user.name)"
-          echo "Git Email: $(git config user.email)"
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to sync"
-            exit 0
-          fi
-
-          git commit -m "Auto sync from ${SOURCE_REPO}"
-          git push origin HEAD:main
-
-          echo "Sync completed successfully"
