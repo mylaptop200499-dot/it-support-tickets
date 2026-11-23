@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   deploy:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -33,52 +34,66 @@ jobs:
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           DEPLOY_SCRIPT_PATH: ${{ vars.DEPLOY_SCRIPT_PATH }}
+
         run: |
           set -euo pipefail
 
           echo "Starting deployment on EC2..."
+          echo "Instance ID: $INSTANCE_ID"
 
-          # Prepare SSM command parameters safely
+          # Run deployment as ubuntu user
           PARAMS=$(jq -n \
-            --arg cmd "sudo bash $DEPLOY_SCRIPT_PATH" \
+            --arg cmd "sudo -u ubuntu -H bash $DEPLOY_SCRIPT_PATH" \
             '{commands: [$cmd]}')
 
-          # Send deployment command to EC2
+          # Execute deployment using AWS SSM
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters "$PARAMS" \
+            --timeout-seconds 3600 \
             --query "Command.CommandId" \
             --output text)
 
           echo "SSM Command ID: $COMMAND_ID"
 
           STATUS="Pending"
+          RESULT=""
 
-          # Wait for deployment completion
+          # Poll deployment status
           for attempt in {1..300}; do
+
             if ! RESULT=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
               --output json 2>/dev/null); then
+
               echo "Waiting for SSM invocation..."
               sleep 10
               continue
             fi
 
             STATUS=$(jq -r '.Status' <<< "$RESULT")
+
             echo "Deployment status: $STATUS"
 
             case "$STATUS" in
-              Success|Failed|Cancelled|TimedOut)
-                break
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                if [[ "$STATUS" != "Cancelling" ]]; then
+                  break
+                fi
                 ;;
             esac
 
             sleep 10
           done
 
-          # Retrieve final deployment result
+          # Retrieve final deployment results
+          if [[ -z "$RESULT" ]]; then
+            echo "Unable to retrieve SSM deployment results"
+            exit 1
+          fi
+
           RESULT=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
@@ -88,33 +103,39 @@ jobs:
           EXIT_CODE=$(jq -r '.ResponseCode' <<< "$RESULT")
 
           echo "========== DEPLOYMENT LOGS =========="
-          jq -r '.StandardOutputContent' <<< "$RESULT"
+          jq -r '.StandardOutputContent // ""' <<< "$RESULT"
 
           echo "========== ERROR LOGS =========="
-          jq -r '.StandardErrorContent' <<< "$RESULT"
+          jq -r '.StandardErrorContent // ""' <<< "$RESULT"
 
           echo "========== FINAL RESULT =========="
           echo "Status: $STATUS"
           echo "Exit Code: $EXIT_CODE"
 
           if [[ "$STATUS" == "Success" && "$EXIT_CODE" == "0" ]]; then
+
             echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
 
             {
               echo "## Deployment Successful"
-              echo "Branch: main"
-              echo "Instance: $INSTANCE_ID"
+              echo ""
+              echo "- Branch: main"
+              echo "- Instance: $INSTANCE_ID"
+              echo "- Status: $STATUS"
+              echo "- Exit code: $EXIT_CODE"
             } >> "$GITHUB_STEP_SUMMARY"
 
           else
+
             echo "DEPLOYMENT FAILED"
 
             {
               echo "## Deployment Failed"
-              echo "Branch: main"
-              echo "Instance: $INSTANCE_ID"
-              echo "Status: $STATUS"
-              echo "Exit Code: $EXIT_CODE"
+              echo ""
+              echo "- Branch: main"
+              echo "- Instance: $INSTANCE_ID"
+              echo "- Status: $STATUS"
+              echo "- Exit code: $EXIT_CODE"
             } >> "$GITHUB_STEP_SUMMARY"
 
             exit 1
